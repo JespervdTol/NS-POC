@@ -14,14 +14,16 @@ import { MockTravelDataProvider } from "../../providers/travel/MockTravelDataPro
 import { RuleReasoningProvider } from "../../providers/reasoning/RuleReasoningProvider";
 import { InAppNotificationProvider } from "../../providers/notifications/InAppNotificationProvider";
 
+// New real providers (now available / next steps)
+import { NsApiTravelDataProvider } from "../../providers/travel/NsApiTravelDataProvider";
+import { OllamaReasoningProvider } from "../../providers/reasoning/OllamaReasoningProvider";
+
 // POC controls
 import { MockPocControls } from "../../providers/poc/MockPocControls";
 
 // Later you’ll add these and switch via config:
 // import { ExpoCalendarProvider } from "../../providers/calendar/ExpoCalendarProvider";
-// import { NsApiTravelDataProvider } from "../../providers/travel/NsApiTravelDataProvider";
 // import { ExpoPushNotificationProvider } from "../../providers/notifications/ExpoPushNotificationProvider";
-// import { LlmReasoningProvider } from "../../providers/reasoning/LlmReasoningProvider";
 
 export type Container = {
   calendar: CalendarProvider;
@@ -51,21 +53,27 @@ export function buildContainer(): Container {
 
   // 3) Travel API provider
   const travel: TravelDataProvider =
-    appConfig.travel === "mock"
-      ? new MockTravelDataProvider()
-      : new MockTravelDataProvider(); // later: NsApiTravelDataProvider({ baseUrl: appConfig.nsProxyBaseUrl })
+    appConfig.travel === "nsApi"
+      ? new NsApiTravelDataProvider({ baseUrl: appConfig.nsProxyBaseUrl })
+      : new MockTravelDataProvider();
 
   // 4) Reasoning
   const reasoning: ReasoningProvider =
-    appConfig.reasoning === "rules"
-      ? new RuleReasoningProvider()
-      : new RuleReasoningProvider(); // later: LlmReasoningProvider
+    appConfig.reasoning === "llm"
+      ? new OllamaReasoningProvider({ baseUrl: appConfig.nsProxyBaseUrl })
+      : new RuleReasoningProvider();
 
   // 5) MonitoringService (your “backend AI” runner)
   const monitor = new MonitoringService({ calendar, travel, reasoning, notifications });
 
   // 6) POC controls (simulate unexpected situations)
-  const poc: PocControls = new MockPocControls({ travel: travel as any, monitor });
+  const poc: PocControls = new MockPocControls({
+    travel: travel as any,
+    calendar,
+    reasoning,
+    notifications,
+    monitor,
+  });
 
   return { calendar, travel, reasoning, notifications, monitor, poc };
 }
