@@ -1,12 +1,23 @@
-export type BusyBlock = {
-  start: Date;
-  end: Date;
+export type CalendarPermissionStatus = "granted" | "denied" | "undetermined" | "unsupported";
+
+export type CalendarPermission = {
+  status: CalendarPermissionStatus;
+  canAskAgain: boolean;
+  granted: boolean;
 };
 
-export type CalendarPermission = "granted" | "denied" | "undetermined";
+export type BusyBlock = {
+  id: string;
+  title?: string;
+  start: Date;
+  end: Date;
+  location?: string;
+};
 
-export interface CalendarProvider {
+export type CalendarProvider = {
   name: string;
-  requestPermission(): Promise<CalendarPermission>;
-  getBusyBlocks(params: { from: Date; to: Date }): Promise<BusyBlock[]>;
-}
+
+  requestPermission: () => Promise<CalendarPermission>;
+
+  getBusyBlocks: (params: { from: Date; to: Date }) => Promise<BusyBlock[]>;
+};

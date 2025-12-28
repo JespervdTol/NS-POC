@@ -4,18 +4,11 @@ export class MockCalendarProvider implements CalendarProvider {
   name = "MockCalendarProvider";
 
   async requestPermission(): Promise<CalendarPermission> {
-    return "granted";
+    return { status: "granted", canAskAgain: true, granted: true };
   }
 
-  async getBusyBlocks(params: { from: Date; to: Date }): Promise<BusyBlock[]> {
-    // Simulate one meeting 3 hours from now, lasting 30 minutes
-    const start = new Date(params.from);
-    start.setHours(start.getHours() + 3);
-    start.setMinutes(0, 0, 0);
-
-    const end = new Date(start);
-    end.setMinutes(end.getMinutes() + 30);
-
-    return [{ start, end }];
+  async getBusyBlocks(_: { from: Date; to: Date }): Promise<BusyBlock[]> {
+    // Mock = no busy blocks by default
+    return [];
   }
 }

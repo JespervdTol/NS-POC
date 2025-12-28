@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { SafeAreaView, ScrollView, Pressable, Text, StyleSheet } from "react-native";
+
 import { container } from "../core/di/container";
 import { TravelAlert } from "../core/types/alerts";
 
@@ -7,12 +8,30 @@ import { NsHeader } from "../ui/components/NsHeader";
 import { JourneyPlannerCard } from "../ui/components/JourneyPlannerCard";
 import { DisruptionsStrip } from "../ui/components/DisruptionsStrip";
 import { NsAiUpdateCard } from "../ui/components/NsAiUpdateCard";
+import { CalendarWatchService } from "../core/services/CalendarWatchService";
 
 export function AppShell() {
   const [alert, setAlert] = useState<TravelAlert | null>(null);
 
   useEffect(() => {
-    return container.notifications.onReceive((a) => setAlert(a));
+    // Listen for in-app / push-tap notifications
+    const unsubNotif = container.notifications.onReceive((a) => setAlert(a));
+
+    // Foreground calendar watcher
+    const watcher = new CalendarWatchService({
+      calendar: container.calendar,
+      onChange: async ({ after }) => {
+        console.log("[CAL WATCH] calendar changed");
+        await container.monitor.onCalendarChanged({ afterKey: after.key });
+      },
+    });
+
+    const stopWatch = watcher.start();
+
+    return () => {
+      unsubNotif();
+      stopWatch();
+    };
   }, []);
 
   async function simulateUnexpectedSituation() {
@@ -29,7 +48,7 @@ export function AppShell() {
 
         {alert ? <NsAiUpdateCard alert={alert} /> : null}
 
-        {/* POC-only trigger */}
+        {/* POC-only disruption trigger */}
         <Pressable style={styles.debug} onPress={simulateUnexpectedSituation}>
           <Text style={styles.debugText}>POC: simulate unexpected situation</Text>
         </Pressable>

@@ -8,15 +8,17 @@ import { PocControls } from "../types/poc";
 
 import { MonitoringService } from "../services/MonitoringService";
 
-// Providers you already have
+// Mock Providers
 import { MockCalendarProvider } from "../../providers/calendar/MockCalendarProvider";
 import { MockTravelDataProvider } from "../../providers/travel/MockTravelDataProvider";
 import { RuleReasoningProvider } from "../../providers/reasoning/RuleReasoningProvider";
 import { InAppNotificationProvider } from "../../providers/notifications/InAppNotificationProvider";
 
-// New real providers (now available / next steps)
+// Real Providers (+ Expo)
 import { NsApiTravelDataProvider } from "../../providers/travel/NsApiTravelDataProvider";
 import { OllamaReasoningProvider } from "../../providers/reasoning/OllamaReasoningProvider";
+import { ExpoPushNotificationProvider } from "../../providers/notifications/ExpoPushNotificationProvider";
+import { ExpoCalendarProvider } from "../../providers/calendar/ExpoCalendarProvider";
 
 // POC controls
 import { MockPocControls } from "../../providers/poc/MockPocControls";
@@ -41,15 +43,15 @@ export type Container = {
 export function buildContainer(): Container {
   // 1) Notifications
   const notifications: NotificationProvider =
-    appConfig.notifications === "inapp"
-      ? new InAppNotificationProvider()
-      : new InAppNotificationProvider(); // later: ExpoPushNotificationProvider
+    appConfig.notifications === "expoPush"
+      ? new ExpoPushNotificationProvider()
+      : new InAppNotificationProvider();
 
   // 2) Calendar
   const calendar: CalendarProvider =
-    appConfig.calendar === "mock"
-      ? new MockCalendarProvider()
-      : new MockCalendarProvider(); // later: ExpoCalendarProvider
+    appConfig.calendar === "expo"
+      ? new ExpoCalendarProvider()
+      : new MockCalendarProvider();
 
   // 3) Travel API provider
   const travel: TravelDataProvider =
@@ -75,5 +77,5 @@ export function buildContainer(): Container {
     monitor,
   });
 
-  return { calendar, travel, reasoning, notifications, monitor, poc };
+  return { calendar, travel, reasoning, notifications, monitor, poc};
 }

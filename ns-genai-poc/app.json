@@ -13,7 +13,10 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCalendarsUsageDescription": "We use your calendar to detect schedule changes and suggest better train options."
+      }
     },
     "android": {
       "adaptiveIcon": {
