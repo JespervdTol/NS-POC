@@ -21,7 +21,6 @@ export class NsReisinfoClient {
       r = await fetch(url.toString(), {
         headers: {
           Accept: "application/json",
-          // Helps prevent HTML interstitials and makes ngrok treat it as an API request
           "User-Agent": "NS-POC/1.0",
           "ngrok-skip-browser-warning": "true",
         },

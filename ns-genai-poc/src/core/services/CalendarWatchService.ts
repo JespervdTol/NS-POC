@@ -2,7 +2,7 @@ import { AppState, AppStateStatus, Platform } from "react-native";
 import { CalendarProvider } from "../types/calendar";
 
 type EventSnapshot = {
-  key: string; // stable identifier of "next event state"
+  key: string;
   title?: string;
   startIso: string;
   endIso: string;
@@ -14,7 +14,6 @@ function toIso(d: Date) {
 }
 
 function snapshotKey(s: EventSnapshot) {
-  // If the event time/title changes, this key changes -> we detect a change.
   return `${s.title ?? ""}|${s.startIso}|${s.endIso}|${s.location ?? ""}`;
 }
 
@@ -30,7 +29,6 @@ export class CalendarWatchService {
   ) {}
 
   start() {
-    // Web: skip (no device calendar)
     if (Platform.OS === "web") return () => {};
 
     const handler = async (state: AppStateStatus) => {
@@ -38,7 +36,6 @@ export class CalendarWatchService {
       await this.checkOnce();
     };
 
-    // Run once immediately when starting
     this.checkOnce().catch(() => {});
 
     this.sub = AppState.addEventListener("change", handler);
@@ -54,7 +51,6 @@ export class CalendarWatchService {
 
     const blocks = await this.deps.calendar.getBusyBlocks({ from: now, to });
 
-    // Choose the next upcoming block (soonest starting in the future)
     const next = blocks.find((b) => b.end.getTime() > now.getTime());
     if (!next) return;
 
@@ -67,13 +63,11 @@ export class CalendarWatchService {
     };
     after.key = snapshotKey(after);
 
-    // First run just stores baseline
     if (!this.last) {
       this.last = after;
       return;
     }
 
-    // Detect change (time/title/location changed)
     if (this.last.key !== after.key) {
       const before = this.last;
       this.last = after;

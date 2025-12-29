@@ -8,7 +8,6 @@ export class MockCalendarProvider implements CalendarProvider {
   }
 
   async getBusyBlocks(_: { from: Date; to: Date }): Promise<BusyBlock[]> {
-    // Mock = no busy blocks by default
     return [];
   }
 }

@@ -19,28 +19,19 @@ export type NotificationProviderKind = "inapp" | "expoPush";
  */
 const DEMO_PROXY_URL = "https://zandra-unprophetical-vina.ngrok-free.dev";
 
-/**
- * Resolve backend proxy URL in a safe, predictable way
- */
 function getProxyBaseUrl() {
-  // If ngrok URL is set, use it everywhere (web + iOS)
   if (DEMO_PROXY_URL) return DEMO_PROXY_URL;
 
-  // Web can use localhost
   if (Platform.OS === "web") return "http://localhost:3001";
 
-  // iOS device needs your PC LAN IP if no ngrok is used
-  // (only change this line if you’re not using ngrok)
-  return "http://192.168.1.50:3001";
+  return "http://IP:3001";
 }
 
 export const appConfig = {
-  // Providers
   calendar: (Platform.OS === "web" ? "mock" : "expo") as CalendarProviderKind,
   travel: "nsApi" as TravelProviderKind,
   reasoning: "llm" as ReasoningProviderKind,
   notifications: (Platform.OS === "web" ? "inapp" : "expoPush") as NotificationProviderKind,
 
-  // Backend proxy (NS API + Ollama)
   nsProxyBaseUrl: getProxyBaseUrl(),
 } as const;

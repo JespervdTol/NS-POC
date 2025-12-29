@@ -8,5 +8,5 @@ export type TravelAlert = {
   title: string;
   body: string;
   createdAt: number;
-  recommendation?: Recommendation; // shown on home card after tap
+  recommendation?: Recommendation;
 };

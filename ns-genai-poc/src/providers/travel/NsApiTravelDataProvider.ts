@@ -13,12 +13,10 @@ export class NsApiTravelDataProvider implements TravelDataProvider {
   }
 
   async getPlannedTrip() {
-    // POC: static planned trip; later from user’s journey/planner
     return { from: "Amsterdam", to: "Rotterdam", plannedDeparture: "14:32" };
   }
 
   async getDisruption(): Promise<TravelDisruption> {
-    // POC: disruptions not interpreted yet
     return "none";
   }
 

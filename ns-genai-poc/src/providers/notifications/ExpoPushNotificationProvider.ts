@@ -14,8 +14,6 @@ export class ExpoPushNotificationProvider implements NotificationProvider {
   private responseSub: Notifications.Subscription | null = null;
 
   constructor() {
-    // On web, Expo Notifications is not the same experience. We still allow it to compile.
-    // Real behavior is handled by buildContainer choosing InApp on web.
     this.init().catch((e) => console.log("[NOTIFS] init error:", String(e?.message || e)));
   }
 
@@ -27,23 +25,18 @@ export class ExpoPushNotificationProvider implements NotificationProvider {
   }
 
   notify(alert: TravelAlert): void {
-    // Also emit in-app so the card can show immediately when user is already in the app
     this.emit(alert);
 
-    // Schedule a local notification (iOS pop-up)
     this.scheduleLocal(alert).catch((e) =>
       console.log("[NOTIFS] scheduleLocal error:", String(e?.message || e))
     );
   }
-
-  // ----- private -----
 
   private emit(alert: TravelAlert) {
     for (const h of this.handlers) h(alert);
   }
 
   private async init() {
-    // Configure how notifications are shown while app is foregrounded
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowAlert: true,
@@ -57,7 +50,6 @@ export class ExpoPushNotificationProvider implements NotificationProvider {
 
     if (Platform.OS === "web") return;
 
-    // Permission request (required on iOS)
     if (Device.isDevice) {
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
       let finalStatus = existingStatus;
@@ -74,11 +66,9 @@ export class ExpoPushNotificationProvider implements NotificationProvider {
       console.log("[NOTIFS] must use a physical device for iOS notifications");
     }
 
-    // When user taps the notification, re-emit the alert so the card becomes visible
     this.responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
       const data = response.notification.request.content.data as any;
 
-      // We store the full TravelAlert inside notification data
       const alert = data?.alert as TravelAlert | undefined;
 
       if (alert) {
@@ -91,14 +81,13 @@ export class ExpoPushNotificationProvider implements NotificationProvider {
   private async scheduleLocal(alert: TravelAlert) {
     if (Platform.OS === "web") return;
 
-    // Put the full alert object in notification data so we can reconstruct on tap
     await Notifications.scheduleNotificationAsync({
       content: {
         title: alert.title,
         body: alert.body,
         data: { alert },
       },
-      trigger: null, // immediate
+      trigger: null,
     });
   }
 }

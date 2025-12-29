@@ -20,12 +20,7 @@ import { OllamaReasoningProvider } from "../../providers/reasoning/OllamaReasoni
 import { ExpoPushNotificationProvider } from "../../providers/notifications/ExpoPushNotificationProvider";
 import { ExpoCalendarProvider } from "../../providers/calendar/ExpoCalendarProvider";
 
-// POC controls
 import { MockPocControls } from "../../providers/poc/MockPocControls";
-
-// Later you’ll add these and switch via config:
-// import { ExpoCalendarProvider } from "../../providers/calendar/ExpoCalendarProvider";
-// import { ExpoPushNotificationProvider } from "../../providers/notifications/ExpoPushNotificationProvider";
 
 export type Container = {
   calendar: CalendarProvider;
@@ -33,10 +28,8 @@ export type Container = {
   reasoning: ReasoningProvider;
   notifications: NotificationProvider;
 
-  // “backend AI”
   monitor: MonitoringService;
 
-  // POC-only (safe to remove later)
   poc: PocControls;
 };
 
@@ -65,10 +58,10 @@ export function buildContainer(): Container {
       ? new OllamaReasoningProvider({ baseUrl: appConfig.nsProxyBaseUrl })
       : new RuleReasoningProvider();
 
-  // 5) MonitoringService (your “backend AI” runner)
+  // 5) Services
   const monitor = new MonitoringService({ calendar, travel, reasoning, notifications });
 
-  // 6) POC controls (simulate unexpected situations)
+  // 6) POC controls
   const poc: PocControls = new MockPocControls({
     travel: travel as any,
     calendar,

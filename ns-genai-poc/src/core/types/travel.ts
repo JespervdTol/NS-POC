@@ -2,8 +2,8 @@ export type TravelDisruption = "none" | "cancelled" | "delayed";
 
 export type RouteOption = {
   id: string;
-  summary: string; // e.g. "14:28 via Utrecht"
-  arrivalTime: string; // "HH:MM"
+  summary: string;
+  arrivalTime: string;
   changes: number;
 };
 

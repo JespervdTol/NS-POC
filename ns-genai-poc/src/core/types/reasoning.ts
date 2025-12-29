@@ -4,7 +4,7 @@ import { RouteOption, TravelDisruption } from "./travel";
 export type Recommendation = {
   chosen: RouteOption;
   reason: string;
-  confidence: number; // 0..1
+  confidence: number;
 };
 
 export interface ReasoningProvider {

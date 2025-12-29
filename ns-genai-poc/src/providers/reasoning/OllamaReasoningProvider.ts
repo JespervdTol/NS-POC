@@ -17,7 +17,6 @@ export class OllamaReasoningProvider implements ReasoningProvider {
   }): Promise<Recommendation> {
     const { disruption, alternatives, busyBlocks, now } = params;
 
-    // Keep prompt small & deterministic for a POC
     const nextEvent = busyBlocks
       .map((b) => b.start)
       .sort((a, b) => a.getTime() - b.getTime())[0];
@@ -54,7 +53,6 @@ confidence must be between 0 and 1.
 
     if (!r.ok) {
       const t = await r.text();
-      // fallback: never crash demo
       return {
         chosen: alternatives[0],
         reason: `LLM unavailable (HTTP ${r.status}). Falling back to first option.`,
@@ -65,7 +63,6 @@ confidence must be between 0 and 1.
     const data = (await r.json()) as ReasonResponse;
     const text = (data.text || "").trim();
 
-    // Try parse JSON. If model wraps with text, try to extract JSON block.
     const extracted = extractJson(text);
 
     try {
@@ -84,7 +81,6 @@ confidence must be between 0 and 1.
         confidence: Number.isFinite(confidence) ? confidence : 0.7,
       };
     } catch {
-      // fallback: demo should never die
       return {
         chosen: alternatives[0],
         reason: "Recommended based on current context.",
@@ -100,7 +96,6 @@ function clamp01(n: number) {
 }
 
 function extractJson(s: string) {
-  // If the model returns extra text, grab the first {...} block.
   const start = s.indexOf("{");
   const end = s.lastIndexOf("}");
   if (start >= 0 && end > start) return s.slice(start, end + 1);

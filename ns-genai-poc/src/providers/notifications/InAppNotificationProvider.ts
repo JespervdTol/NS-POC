@@ -8,7 +8,6 @@ export class InAppNotificationProvider implements NotificationProvider {
   private bus = new NotificationBus<TravelAlert>();
 
   notify(alert: TravelAlert) {
-    // For POC: emit immediately. Later: use expo-notifications push.
     this.bus.emit(alert);
   }
 

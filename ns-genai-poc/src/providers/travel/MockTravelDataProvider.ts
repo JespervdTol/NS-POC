@@ -13,7 +13,6 @@ export class MockTravelDataProvider implements TravelDataProvider {
     return this.disruption;
   }
 
-  // POC convenience: let UI toggle disruption
   setDisruption(d: TravelDisruption) {
     this.disruption = d;
   }

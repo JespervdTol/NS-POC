@@ -9,7 +9,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// IMPORTANT: base must NOT include /api/v2
 const NS_BASE = process.env.NS_BASE_URL || "https://gateway.apiportal.ns.nl/reisinformatie-api";
 const NS_KEY = process.env.NS_SUBSCRIPTION_KEY;
 
@@ -17,26 +16,14 @@ if (!NS_KEY) {
   console.warn("⚠️  NS_SUBSCRIPTION_KEY missing in .env");
 }
 
-/**
- * Friendly root (helps demo)
- */
 app.get("/", (_, res) => {
   res.send("NS GenAI Proxy running. Try /health or /ns/reisinformatie/arrivals?station=UT");
 });
 
-/**
- * Health check
- */
 app.get("/health", (_, res) => {
   res.json({ ok: true });
 });
 
-/**
- * Generic Reisinformatie proxy (supports ALL endpoints)
- *
- * Example:
- * GET /ns/reisinformatie/arrivals?station=UT&v=2
- */
 app.all("/ns/reisinformatie/:endpoint", async (req, res) => {
   try {
     if (!NS_KEY) {
@@ -75,9 +62,6 @@ app.all("/ns/reisinformatie/:endpoint", async (req, res) => {
   }
 });
 
-/**
- * Ollama reasoning endpoint
- */
 app.post("/reason", async (req, res) => {
   try {
     const { prompt } = req.body;

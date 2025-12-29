@@ -10,7 +10,6 @@ function uid() {
   return Math.random().toString(36).slice(2);
 }
 
-// Optional capability: only available on mock travel provider, but UI never checks concrete types.
 type SupportsSimulatedDisruption = TravelDataProvider & {
   setDisruption?: (d: any) => void;
 };
@@ -31,7 +30,6 @@ export class MockPocControls implements PocControls {
   async simulateUnexpectedSituation(): Promise<void> {
     console.log("[POC] simulateUnexpectedSituation()");
 
-    // If we're on mock travel provider, flip disruption to exercise "real" monitor path
     const current = await this.deps.travel.getDisruption();
     const next = current === "none" ? "cancelled" : current === "cancelled" ? "delayed" : "none";
 
@@ -42,7 +40,6 @@ export class MockPocControls implements PocControls {
       return;
     }
 
-    // Otherwise (real NS provider): emit a guaranteed DEMO alert
     console.log("[POC] Real provider detected (no setDisruption). Emitting demo alert.");
 
     const now = new Date();
@@ -57,7 +54,7 @@ export class MockPocControls implements PocControls {
 
     const rec = await this.deps.reasoning.recommend({
       busyBlocks,
-      disruption: "cancelled", // demo scenario label
+      disruption: "cancelled",
       alternatives,
       now,
     });
