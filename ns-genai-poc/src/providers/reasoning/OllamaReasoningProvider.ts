@@ -26,6 +26,47 @@ function extractJson(s: string) {
   return s;
 }
 
+function safeStr(x: any) {
+  return typeof x === "string" ? x : x == null ? "" : String(x);
+}
+
+function containsHardCertainty(s: string) {
+  const t = s.toLowerCase();
+  // Disallow strong certainty
+  const hard = [" will ", " definitely", " guarantee", " certainly", "100%", " for sure"];
+  return hard.some((w) => t.includes(w));
+}
+
+function hasSoftLanguage(s: string) {
+  const t = s.toLowerCase();
+  const soft = ["should", "likely", "looks like", "i suggest", "i’d suggest", "might", "probably"];
+  return soft.some((w) => t.includes(w));
+}
+
+function looksTooGenericReason(s: string) {
+  const t = s.trim().toLowerCase();
+  if (!t) return true;
+
+  // Reject common regressions like “earliest arriving option”
+  const banned = [
+    "earliest arriving option",
+    "earliest option",
+    "best option",
+    "closest arrival before arriveby",
+    "closest arrival before arrivebyhhmm",
+    "closest arrival",
+  ];
+  if (banned.some((b) => t === b || t.includes(b))) return true;
+
+  // Too short => not demo-quality
+  if (t.length < 90) return true;
+
+  // Bullet-ish patterns (we want a short paragraph)
+  if (t.includes("\n-") || t.includes("\n•") || t.includes("•")) return true;
+
+  return false;
+}
+
 export class OllamaReasoningProvider implements ReasoningProvider {
   name = "OllamaReasoningProvider";
 
@@ -50,7 +91,6 @@ export class OllamaReasoningProvider implements ReasoningProvider {
     const {
       disruption,
       alternatives,
-      now,
       selectedOption,
       bufferMin,
       meetingStartHHMM,
@@ -66,22 +106,26 @@ export class OllamaReasoningProvider implements ReasoningProvider {
     const arriveByMin = parseHHMM(arriveByHHMM ?? null);
     const nowMin = parseHHMM(currentTimeHHMM ?? null);
     const departAfterMin = parseHHMM(
-      departAfterEffective ?? (typeof travelQuery?.departAfter === "string" ? travelQuery.departAfter : null)
+      departAfterEffective ??
+        (typeof travelQuery?.departAfter === "string" ? travelQuery.departAfter : null)
     );
 
     const canGuard = arriveByMin !== null && nowMin !== null;
 
+    const optDepMin = (opt: RouteOption) => parseHHMM((opt as any).departureTime ?? null);
+    const optArrMin = (opt: RouteOption) => parseHHMM(opt.arrivalTime ?? null);
+
     const isOptDepartOk = (opt: RouteOption) => {
-      const dep = parseHHMM((opt as any).departureTime ?? null);
-      if (dep === null) return true; // if missing, don't hard-block
-      if (dep < nowMin!) return false;
+      const dep = optDepMin(opt);
+      if (dep === null) return true;
+      if (nowMin !== null && dep < nowMin) return false;
       if (departAfterMin !== null && dep < departAfterMin) return false;
       return true;
     };
 
     const isOptArriveOnTime = (opt: RouteOption) => {
       if (arriveByMin === null) return true;
-      const arr = parseHHMM(opt.arrivalTime ?? null);
+      const arr = optArrMin(opt);
       if (arr === null) return true;
       return arr <= arriveByMin;
     };
@@ -106,18 +150,25 @@ Decision logic:
 A) If selectedOption exists and arrives <= arriveByHHMM, keep it.
 B) Otherwise pick the best option that arrives <= arriveByHHMM:
    - if multiple fit: pick the one that arrives closest BEFORE arriveByHHMM.
-C) If none fit: pick the earliest arriving option and clearly state it will be late.
+C) If none fit: pick the earliest arriving option and say gently that timing may be tight.
 
-Important: The user's preferred buffer is inferred from their selection.
-If bufferMin is 30, they prefer arriving 30 minutes early.
+Tone + explanation requirements (VERY IMPORTANT):
+- Output the reason as a SHORT paragraph of exactly 2 sentences (no bullet points, no line breaks).
+- Calm and reassuring.
+- Never use certainty words like "will", "definitely", "guarantee", "100%".
+- Use soft language like "should", "likely", "looks like", "I suggest".
+- Mention: schedule changed + arrive-by/buffer + why this option.
 
 Context:
 - Disruption: ${disruption}
 - Meeting start (HH:MM): ${meetingStartHHMM ?? "unknown"}
 - Arrive-by (HH:MM): ${arriveByHHMM ?? "unknown"}
-- Inferred bufferMin: ${bufferMin ?? "unknown"}
+- Inferred bufferMin (user preference): ${bufferMin ?? "unknown"}
 - currentTimeHHMM: ${currentTimeHHMM ?? "unknown"}
-- departAfterEffective: ${departAfterEffective ?? (typeof travelQuery?.departAfter === "string" ? travelQuery.departAfter : "unknown")}
+- departAfterEffective: ${
+      departAfterEffective ??
+      (typeof travelQuery?.departAfter === "string" ? travelQuery.departAfter : "unknown")
+    }
 - Used widened search: ${usedWidenedSearch ? "true" : "false"}
 
 Selected option:
@@ -188,7 +239,7 @@ confidence must be between 0 and 1.
           return { kind: "invalidId" as const };
         }
 
-        // Guardrail: reject impossible/late choices if we can check them
+        // Guardrail: reject choices that violate time constraints if we can check them
         if (canGuard) {
           const violatesDepart = !isOptDepartOk(chosen);
           const violatesArrive = !isOptArriveOnTime(chosen);
@@ -208,9 +259,29 @@ confidence must be between 0 and 1.
           }
         }
 
+        const reason = safeStr(parsed.reason).replace(/\s+/g, " ").trim();
+
+        // Enforce the tone/quality we want for the demo
+        if (
+          looksTooGenericReason(reason) ||
+          containsHardCertainty(reason) ||
+          !hasSoftLanguage(reason)
+        ) {
+          console.log(
+            `[LLM] ${label} BAD_REASON`,
+            JSON.stringify({
+              tooGeneric: looksTooGenericReason(reason),
+              hardCertainty: containsHardCertainty(reason),
+              missingSoft: !hasSoftLanguage(reason),
+              reasonPreview: reason.slice(0, 140),
+            })
+          );
+          return { kind: "badReason" as const };
+        }
+
         const rec: Recommendation = {
           chosen,
-          reason: String(parsed.reason || "Recommended based on current context."),
+          reason,
           confidence: clamp01(Number(parsed.confidence)),
           meta: {
             meetingStart: meetingStartHHMM ?? undefined,
@@ -225,7 +296,7 @@ confidence must be between 0 and 1.
             departAfter: typeof travelQuery?.departAfter === "string" ? travelQuery.departAfter : undefined,
             currentTimeHHMM: currentTimeHHMM ?? undefined,
             departAfterEffective: departAfterEffective ?? undefined,
-          },
+          } as any,
         };
 
         return { kind: "ok" as const, rec };
@@ -238,12 +309,10 @@ confidence must be between 0 and 1.
     const res1 = await attempt(basePrompt, "attempt1");
     if (res1?.kind === "ok") return res1.rec;
 
-    if (res1?.kind === "invalidId" || res1?.kind === "violatesRules") {
+    if (res1?.kind === "invalidId" || res1?.kind === "violatesRules" || res1?.kind === "badReason") {
       const constraint =
         canGuard && eligibleOnTimeIds.length > 0
-          ? `You MUST choose an id from this ON-TIME eligible list (arrives <= arriveBy AND departs after current/departAfter):\n${JSON.stringify(
-              eligibleOnTimeIds
-            )}`
+          ? `You MUST choose an id from this ON-TIME eligible list:\n${JSON.stringify(eligibleOnTimeIds)}`
           : `You MUST choose an id from the valid list:\n${JSON.stringify(validIds)}`;
 
       const retryPrompt = `
@@ -251,7 +320,14 @@ Your previous answer was not acceptable (${res1.kind}).
 
 ${constraint}
 
-Return ONLY valid JSON in the same schema:
+Rewrite your answer. Requirements:
+- reason must be EXACTLY 2 sentences, one paragraph, no bullets, no line breaks.
+- calm and reassuring tone.
+- never use certainty words ("will", "definitely", "guarantee", "100%").
+- use soft language ("should", "likely", "looks like", "I suggest").
+- mention schedule change + arrive-by/buffer + why this option.
+
+Return ONLY valid JSON:
 {
   "chosenRouteId": "string",
   "reason": "string",

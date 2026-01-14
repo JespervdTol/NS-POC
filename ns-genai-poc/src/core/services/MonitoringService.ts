@@ -147,10 +147,11 @@ export class MonitoringService {
   }
 
   private makeAlert(params: { body: string; recommendation: any }): TravelAlert {
+    const pushTitle = "Updated travel suggestion";
     return {
       id: uid(),
       type: "disruption",
-      title: "Travel update",
+      title: pushTitle,
       body: params.body,
       createdAt: Date.now(),
       recommendation: params.recommendation,
@@ -270,12 +271,11 @@ export class MonitoringService {
 
     rec.meta = { ...(rec.meta ?? {}), usedWidenedSearch };
 
-    const body = this.selectedOption
-      ? "Your calendar changed. Checking if your selected train still fits."
-      : "Your calendar changed. Finding the best train based on your updated schedule.";
+    const pushBody = "An event in your calendar changed — tap to see an updated train suggestion.";
 
-    console.log("[MONITOR] notifying with chosen:", rec.chosen?.id, rec.chosen?.summary);
-
-    this.deps.notifications.notify(this.makeAlert({ body, recommendation: rec }));
+    this.deps.notifications.notify(this.makeAlert({
+      body: pushBody,
+      recommendation: rec
+    }));
   }
 }

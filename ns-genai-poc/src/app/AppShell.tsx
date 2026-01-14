@@ -6,10 +6,12 @@ import { TravelAlert } from "../core/types/alerts";
 import { RouteOption } from "../core/types/travel";
 
 import { NsHeader } from "../ui/components/NsHeader";
-import { JourneyPlannerCard } from "../ui/components/JourneyPlannerCard";
+// ❌ removed JourneyPlannerCard (top part not used)
+// import { JourneyPlannerCard } from "../ui/components/JourneyPlannerCard";
 import { DisruptionsStrip } from "../ui/components/DisruptionsStrip";
 import { NsAiUpdateCard } from "../ui/components/NsAiUpdateCard";
 import { CalendarWatchService } from "../core/services/CalendarWatchService";
+import { NS } from "../ui/theme/nsTheme";
 
 function isHHMM(s: string) {
   return /^\d{1,2}:\d{2}$/.test(s.trim());
@@ -82,17 +84,24 @@ export function AppShell() {
   }
 
   function renderRow(opt: RouteOption) {
-    const from = opt.from ?? "Eindhoven";
-    const to = opt.to ?? "Utrecht Centraal";
-    const dep = opt.departureTime ?? "??:??";
+    const from = (opt as any).from ?? "Eindhoven";
+    const to = (opt as any).to ?? "Utrecht Centraal";
+    const dep = (opt as any).departureTime ?? "??:??";
     const arr = opt.arrivalTime ?? "??:??";
 
     return (
-      <View>
-        <Text style={styles.chooserItemText}>
-          {dep}  {from} → {to}
-        </Text>
-        <Text style={styles.chooserItemHint}>Arrives {arr}</Text>
+      <View style={styles.rowMain}>
+        <View style={styles.rowLeft}>
+          <Text style={styles.rowTime}>{dep}</Text>
+          <Text style={styles.rowRoute}>
+            {from} → {to}
+          </Text>
+        </View>
+
+        <View style={styles.rowRight}>
+          <Text style={styles.rowArrivesLabel}>Arrives</Text>
+          <Text style={styles.rowArrives}>{arr}</Text>
+        </View>
       </View>
     );
   }
@@ -101,13 +110,15 @@ export function AppShell() {
     <SafeAreaView style={styles.safe}>
       <NsHeader />
 
-      <ScrollView>
-        <JourneyPlannerCard />
-        <DisruptionsStrip />
+      <ScrollView contentContainerStyle={styles.scrollPad}>
 
+        {/* ✅ NS-styled POC selector */}
         <View style={styles.selectorWrap}>
           <View style={styles.selectorHeaderRow}>
-            <Text style={styles.selectorTitle}>POC: Select a train</Text>
+            <View>
+              <Text style={styles.selectorKicker}>Travel</Text>
+              <Text style={styles.selectorTitle}>Choose a train (POC)</Text>
+            </View>
 
             <Pressable
               style={styles.selectorToggle}
@@ -123,6 +134,7 @@ export function AppShell() {
 
           <View style={styles.timeRow}>
             <Text style={styles.timeLabel}>Depart after</Text>
+
             <TextInput
               value={departAfter}
               onChangeText={setDepartAfter}
@@ -130,7 +142,9 @@ export function AppShell() {
               style={styles.timeInput}
               autoCapitalize="none"
               autoCorrect={false}
+              keyboardType="numbers-and-punctuation"
             />
+
             <Pressable
               style={[styles.timeBtn, !isHHMM(departAfter) ? styles.timeBtnDisabled : null]}
               disabled={!isHHMM(departAfter)}
@@ -139,14 +153,15 @@ export function AppShell() {
               <Text style={styles.timeBtnText}>Load trains</Text>
             </Pressable>
           </View>
-          {!isHHMM(departAfter) ? <Text style={styles.timeHint}>Enter time as HH:MM (e.g. 15:00)</Text> : null}
+
+          {!isHHMM(departAfter) ? <Text style={styles.timeHint}>Enter time as HH:MM (e.g. 12:00)</Text> : null}
 
           {selected ? (
             <View style={styles.selectedBox}>
-              <Text style={styles.selectedLabel}>Selected</Text>
+              <Text style={styles.selectedLabel}>Selected train</Text>
               <Text style={styles.selectedValue}>
-                {selected.departureTime ?? "??:??"}  {(selected.from ?? "Eindhoven")} → {(selected.to ?? "Utrecht Centraal")} • arrives{" "}
-                {selected.arrivalTime}
+                {(selected as any).departureTime ?? "??:??"} {(selected as any).from ?? "Eindhoven"} →{" "}
+                {(selected as any).to ?? "Utrecht Centraal"} • arrives {selected.arrivalTime ?? "??:??"}
               </Text>
 
               <Pressable style={styles.clearBtn} onPress={clearSelection}>
@@ -154,7 +169,7 @@ export function AppShell() {
               </Pressable>
             </View>
           ) : (
-            <Text style={styles.noSelection}>No train selected yet. Pick one from “Choose”.</Text>
+            <Text style={styles.noSelection}>No train selected yet. Tap “Choose” to pick one.</Text>
           )}
 
           {showChooser ? (
@@ -182,14 +197,15 @@ export function AppShell() {
 
         {alert ? <NsAiUpdateCard alert={alert} /> : null}
 
-        <Pressable style={styles.debug} onPress={simulateUnexpectedSituation}>
+        {/* <Pressable style={styles.debug} onPress={simulateUnexpectedSituation}>
           <Text style={styles.debugText}>POC: simulate unexpected situation</Text>
-        </Pressable>
+        </Pressable> */}
 
-        <Text style={styles.debugMeta}>
+        <DisruptionsStrip />
+        {/* <Text style={styles.debugMeta}>
           Providers: {container.calendar.name} / {container.travel.name} / {container.reasoning.name} /{" "}
           {container.notifications.name}
-        </Text>
+        </Text> */}
       </ScrollView>
     </SafeAreaView>
   );
@@ -197,106 +213,131 @@ export function AppShell() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#F6F6F6" },
+  scrollPad: { paddingBottom: 28 },
 
   selectorWrap: {
     marginHorizontal: 16,
     marginTop: 12,
-    padding: 12,
-    borderRadius: 16,
+    padding: 14,
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: NS.border,
     backgroundColor: "white",
   },
+
   selectorHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    gap: 12 as any,
   },
-  selectorTitle: { fontSize: 13, fontWeight: "800", color: "#111" },
-  selectorToggle: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    backgroundColor: "#fafafa",
-  },
-  selectorToggleText: { fontSize: 12, fontWeight: "800", color: "#444" },
 
-  timeRow: { marginTop: 10, flexDirection: "row", alignItems: "center", gap: 8 as any },
-  timeLabel: { fontSize: 12, fontWeight: "800", color: "#333" },
-  timeInput: {
-    width: 80,
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    borderRadius: 10,
+  selectorKicker: { fontSize: 12, fontWeight: "800", color: NS.blue, marginBottom: 2 },
+  selectorTitle: { fontSize: 16, fontWeight: "900", color: "#111" },
+
+  selectorToggle: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: NS.border,
+    backgroundColor: NS.lightBlue,
+  },
+  selectorToggleText: { fontSize: 12, fontWeight: "900", color: NS.blue },
+
+  timeRow: { marginTop: 12, flexDirection: "row", alignItems: "center", gap: 8 as any },
+  timeLabel: { fontSize: 12, fontWeight: "900", color: "#333" },
+
+  timeInput: {
+    width: 86,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: NS.border,
     backgroundColor: "#fff",
-    fontSize: 12,
-    fontWeight: "800",
+    fontSize: 13,
+    fontWeight: "900",
     color: "#111",
   },
-  timeBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    backgroundColor: "#fafafa",
-  },
-  timeBtnDisabled: { opacity: 0.5 },
-  timeBtnText: { fontSize: 12, fontWeight: "800", color: "#444" },
-  timeHint: { marginTop: 6, fontSize: 11, color: "#777" },
 
-  noSelection: { marginTop: 8, fontSize: 12, color: "#666" },
+  timeBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: NS.blue,
+    borderWidth: 1,
+    borderColor: NS.blue,
+  },
+  timeBtnDisabled: { opacity: 0.45 },
+  timeBtnText: { fontSize: 12, fontWeight: "900", color: "white" },
+  timeHint: { marginTop: 8, fontSize: 11, color: NS.grayText },
+
+  noSelection: { marginTop: 10, fontSize: 12, color: NS.grayText },
 
   selectedBox: {
-    marginTop: 10,
-    padding: 10,
-    borderRadius: 12,
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#eee",
-    backgroundColor: "#fcfcfc",
+    borderColor: NS.border,
+    backgroundColor: "#FAFAFA",
   },
-  selectedLabel: { fontSize: 11, fontWeight: "800", color: "#666" },
-  selectedValue: { marginTop: 4, fontSize: 12, fontWeight: "700", color: "#222" },
-  clearBtn: {
-    marginTop: 8,
-    alignSelf: "flex-start",
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#ddd",
-  },
-  clearBtnText: { fontSize: 11, fontWeight: "800", color: "#444" },
+  selectedLabel: { fontSize: 12, fontWeight: "900", color: NS.grayText },
+  selectedValue: { marginTop: 6, fontSize: 13, fontWeight: "900", color: "#111" },
 
-  chooserList: { marginTop: 10 },
-  chooserEmpty: { fontSize: 12, color: "#777" },
-  chooserItem: {
-    paddingVertical: 10,
-    paddingHorizontal: 10,
+  clearBtn: {
+    marginTop: 10,
+    alignSelf: "flex-start",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#eee",
+    borderColor: NS.border,
     backgroundColor: "#fff",
-    marginBottom: 8,
   },
-  chooserItemSelected: { borderColor: "#bbb", backgroundColor: "#f7f7f7" },
-  chooserItemText: { fontSize: 13, fontWeight: "800", color: "#222" },
-  chooserItemHint: { marginTop: 2, fontSize: 12, color: "#777" },
-  tapHint: { marginTop: 6, fontSize: 11, fontWeight: "800", color: "#555" },
+  clearBtnText: { fontSize: 12, fontWeight: "900", color: NS.blue },
+
+  chooserList: { marginTop: 12 },
+
+  chooserEmpty: { fontSize: 12, color: NS.grayText },
+
+  chooserItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: NS.border,
+    backgroundColor: "#fff",
+    marginBottom: 10,
+  },
+
+  chooserItemSelected: {
+    borderColor: NS.blue,
+    backgroundColor: NS.lightBlue,
+  },
+
+  rowMain: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 as any },
+  rowLeft: { flexShrink: 1 },
+  rowTime: { fontSize: 16, fontWeight: "900", color: "#111" },
+  rowRoute: { marginTop: 2, fontSize: 12, fontWeight: "800", color: NS.grayText },
+
+  rowRight: { alignItems: "flex-end" },
+  rowArrivesLabel: { fontSize: 11, fontWeight: "900", color: NS.grayText },
+  rowArrives: { marginTop: 2, fontSize: 14, fontWeight: "900", color: "#111" },
+
+  tapHint: { marginTop: 10, fontSize: 11, fontWeight: "900", color: NS.blue },
 
   debug: {
-    margin: 16,
+    marginHorizontal: 16,
+    marginTop: 12,
     padding: 12,
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: NS.border,
     alignItems: "center",
     backgroundColor: "white",
   },
-  debugText: { fontSize: 12, fontWeight: "700", color: "#555" },
-  debugMeta: { marginHorizontal: 16, marginBottom: 24, fontSize: 11, color: "#777" },
+  debugText: { fontSize: 12, fontWeight: "800", color: NS.grayText },
+  debugMeta: { marginHorizontal: 16, marginTop: 10, fontSize: 11, color: NS.grayText },
 });
