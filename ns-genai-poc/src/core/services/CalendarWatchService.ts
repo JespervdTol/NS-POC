@@ -14,6 +14,7 @@ function toIso(d: Date) {
 }
 
 function snapshotKey(s: EventSnapshot) {
+  // Key includes start/end time so time edits definitely change the key
   return `${s.title ?? ""}|${s.startIso}|${s.endIso}|${s.location ?? ""}`;
 }
 
@@ -33,10 +34,11 @@ export class CalendarWatchService {
 
     const handler = async (state: AppStateStatus) => {
       if (state !== "active") return;
+      console.log("[CAL WATCH] app active -> checking calendar…");
       await this.checkOnce();
     };
 
-    this.checkOnce().catch(() => {});
+    this.checkOnce().catch((e) => console.log("[CAL WATCH] initial check failed:", String(e?.message || e)));
 
     this.sub = AppState.addEventListener("change", handler);
     return () => {
@@ -51,8 +53,16 @@ export class CalendarWatchService {
 
     const blocks = await this.deps.calendar.getBusyBlocks({ from: now, to });
 
-    const next = blocks.find((b) => b.end.getTime() > now.getTime());
-    if (!next) return;
+    // ✅ Demo reliability:
+    // Always pick the next event that hasn't started yet (by start time).
+    const next = blocks
+      .filter((b) => b.start.getTime() > now.getTime())
+      .sort((a, b) => a.start.getTime() - b.start.getTime())[0];
+
+    if (!next) {
+      console.log("[CAL WATCH] no upcoming events found");
+      return;
+    }
 
     const after: EventSnapshot = {
       key: "",
@@ -65,13 +75,21 @@ export class CalendarWatchService {
 
     if (!this.last) {
       this.last = after;
+      console.log("[CAL WATCH] snapshot set:", after.key);
       return;
     }
 
     if (this.last.key !== after.key) {
       const before = this.last;
       this.last = after;
+
+      console.log("[CAL WATCH] calendar changed!");
+      console.log("[CAL WATCH] before:", before.key);
+      console.log("[CAL WATCH] after :", after.key);
+
       this.deps.onChange({ before, after });
+    } else {
+      console.log("[CAL WATCH] no change (same key)");
     }
   }
 }
