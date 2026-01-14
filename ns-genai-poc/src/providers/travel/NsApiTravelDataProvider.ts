@@ -1,3 +1,4 @@
+// src/providers/travel/NsApiTravelDataProvider.ts
 import { AlternativesQuery, RouteOption, TravelDataProvider, TravelDisruption } from "../../core/types/travel";
 import { NsReisinfoClient } from "./NsReisinfoClient";
 
@@ -16,21 +17,78 @@ function parseHHMM(s: string): number | null {
   return hh * 60 + mm;
 }
 
-function formatHHMM(mins: number): string {
-  const h = Math.floor(mins / 60) % 24;
-  const m = mins % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-}
-
 function minutesFromDate(d: Date): number {
   return d.getHours() * 60 + d.getMinutes();
 }
 
-// Demo assumption: Eindhoven -> Utrecht travel time ~47 minutes (IC)
-const DEMO_TRAVEL_MIN = 47;
+function toLocalIsoWithOffset(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
 
-// Demo assumption: no transfers
-const DEMO_CHANGES = 0;
+  const y = date.getFullYear();
+  const m = pad(date.getMonth() + 1);
+  const d = pad(date.getDate());
+  const hh = pad(date.getHours());
+  const mm = pad(date.getMinutes());
+  const ss = "00";
+
+  const offMin = -date.getTimezoneOffset();
+  const sign = offMin >= 0 ? "+" : "-";
+  const abs = Math.abs(offMin);
+  const offH = pad(Math.floor(abs / 60));
+  const offM = pad(abs % 60);
+
+  return `${y}-${m}-${d}T${hh}:${mm}:${ss}${sign}${offH}:${offM}`;
+}
+
+function buildDateTimeFromHHMM(hhmm: string): string {
+  const now = new Date();
+  const p = parseHHMM(hhmm);
+  const base = new Date(now);
+
+  if (p !== null) {
+    base.setHours(Math.floor(p / 60), p % 60, 0, 0);
+  }
+
+  return toLocalIsoWithOffset(base);
+}
+
+function safeStr(x: any) {
+  return typeof x === "string" ? x : x == null ? "" : String(x);
+}
+
+function extractTripTimes(trip: any): { depIso: string; arrIso: string; changes: number } {
+  const legs: any[] = Array.isArray(trip?.legs) ? trip.legs : [];
+
+  const firstLeg = legs[0];
+  const lastLeg = legs.length ? legs[legs.length - 1] : null;
+
+  const depIso =
+    safeStr(firstLeg?.origin?.actualDateTime) ||
+    safeStr(firstLeg?.origin?.plannedDateTime) ||
+    safeStr(trip?.actualDepartureDateTime) ||
+    safeStr(trip?.plannedDepartureDateTime) ||
+    "";
+
+  const arrIso =
+    safeStr(lastLeg?.destination?.actualDateTime) ||
+    safeStr(lastLeg?.destination?.plannedDateTime) ||
+    safeStr(trip?.actualArrivalDateTime) ||
+    safeStr(trip?.plannedArrivalDateTime) ||
+    "";
+
+  const changes =
+    Number.isFinite(trip?.transfers) ? Number(trip.transfers) :
+    Number.isFinite(trip?.numberOfChanges) ? Number(trip.numberOfChanges) :
+    Number.isFinite(trip?.transfersCount) ? Number(trip.transfersCount) :
+    Math.max(0, legs.length - 1);
+
+  return { depIso, arrIso, changes };
+}
+
+// ✅ type guard to remove nulls cleanly
+function notNull<T>(x: T | null): x is T {
+  return x !== null;
+}
 
 export class NsApiTravelDataProvider implements TravelDataProvider {
   name = "NsApiTravelDataProvider";
@@ -49,73 +107,74 @@ export class NsApiTravelDataProvider implements TravelDataProvider {
   }
 
   async getAlternatives(query?: AlternativesQuery): Promise<RouteOption[]> {
-    const station = query?.station ?? "EHV"; // departures board station code
+    const fromStation = query?.station ?? "EHV";
+    const toStation = "UT";
 
     const fromLabel = query?.from ?? "Eindhoven";
     const toLabel = query?.to ?? "Utrecht Centraal";
 
-    // Determine threshold minutes-of-day for filtering
     const now = new Date();
     let thresholdMin = minutesFromDate(now);
 
-    const departAfter = query?.departAfter;
-    if (departAfter instanceof Date) {
-      thresholdMin = minutesFromDate(departAfter);
-    } else if (typeof departAfter === "string" && /^\d{1,2}:\d{2}$/.test(departAfter)) {
+    // ✅ departAfter is HH:MM only
+    const departAfter = typeof query?.departAfter === "string" ? query.departAfter : null;
+
+    if (departAfter && /^\d{1,2}:\d{2}$/.test(departAfter)) {
       const p = parseHHMM(departAfter);
       if (p !== null) thresholdMin = p;
     }
 
-    try {
-      console.log("[NS] departures station:", station, "departAfterMin:", thresholdMin);
+    // ✅ FIX: hard clamp so we never include trains that already departed (even if widen-search goes weird)
+    thresholdMin = Math.max(thresholdMin, minutesFromDate(now));
 
-      const data = await this.client.get<any>("departures", {
-        station,
-        v: 2,
+    const fallbackHHMM = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    const hhmmForQuery = departAfter && /^\d{1,2}:\d{2}$/.test(departAfter) ? departAfter : fallbackHHMM;
+
+    const dateTime = buildDateTimeFromHHMM(hhmmForQuery);
+
+    try {
+      console.log("[NS] trips from:", fromStation, "to:", toStation, "dateTime:", dateTime, "thresholdMin:", thresholdMin);
+
+      const data = await this.client.get<any>("trips", {
+        fromStation,
+        toStation,
+        dateTime,
+        searchForArrival: false,
+        v: 3,
       });
 
-      const deps: any[] =
-        data?.payload?.departures ??
-        data?.payload?.payload?.departures ??
-        data?.departures ??
+      const trips: any[] =
+        data?.payload?.trips ??
+        data?.payload?.payload?.trips ??
+        data?.trips ??
         [];
 
-      // Map to {depTimeMin, depTimeHHMM, product, direction, ...}
-      const mapped = deps
-        .map((d, idx) => {
-          const dt = d.actualDateTime || d.plannedDateTime || "";
-          const depHHMM = hhmmFromIso(dt);
+      const options: RouteOption[] = trips
+        .map((t: any, idx: number): RouteOption | null => {
+          const { depIso, arrIso, changes } = extractTripTimes(t);
+
+          const depHHMM = hhmmFromIso(depIso);
+          const arrHHMM = hhmmFromIso(arrIso);
+
           const depMin = parseHHMM(depHHMM);
 
-          const product = String(d.product?.shortCategoryName || d.product?.categoryName || d.product || d.trainCategory || "");
-          const direction = String(d.direction || d.destination || "");
+          // ✅ FIX: filter based on thresholdMin (already clamped to now)
+          if (depMin !== null && depMin < thresholdMin) return null;
 
-          return { raw: d, idx, depHHMM, depMin, product, direction };
+          const id = safeStr(t?.uid) || safeStr(t?.id) || `trip-${idx}`;
+
+          return {
+            id: `ehv-ut-${id}`,
+            from: fromLabel,
+            to: toLabel,
+            departureTime: depHHMM,
+            arrivalTime: arrHHMM,
+            changes: Number.isFinite(changes) ? changes : 0,
+            summary: `${depHHMM}  ${fromLabel} → ${toLabel}`,
+          };
         })
-        .filter((x) => x.depMin !== null);
-
-      // Filter by chosen time
-      let filtered = mapped.filter((x) => (x.depMin as number) >= thresholdMin);
-
-      // Optional: filter to Intercity-ish to avoid “every minute” sprinters/buses/etc
-      // Keep it forgiving: if nothing remains, we’ll relax this.
-      const icOnly = filtered.filter((x) => x.product.toLowerCase().includes("ic") || x.product.toLowerCase().includes("intercity"));
-      if (icOnly.length >= 2) filtered = icOnly;
-
-      const options: RouteOption[] = filtered.slice(0, 6).map((x) => {
-        const depMin = x.depMin as number;
-        const arrMin = depMin + DEMO_TRAVEL_MIN;
-
-        return {
-          id: `ehv-ut-${x.idx}`,
-          from: fromLabel,
-          to: toLabel,
-          departureTime: x.depHHMM,
-          arrivalTime: formatHHMM(arrMin),
-          changes: DEMO_CHANGES,
-          summary: `${x.depHHMM}  ${fromLabel} → ${toLabel}`,
-        };
-      });
+        .filter(notNull)
+        .slice(0, 8);
 
       if (options.length === 0) {
         return [
@@ -123,7 +182,7 @@ export class NsApiTravelDataProvider implements TravelDataProvider {
             id: "fallback-empty",
             from: fromLabel,
             to: toLabel,
-            summary: "No departures found after the selected time.",
+            summary: "No trip options found after the selected time.",
             departureTime: "—",
             arrivalTime: "—",
             changes: 0,
@@ -141,7 +200,7 @@ export class NsApiTravelDataProvider implements TravelDataProvider {
           id: "fallback-error",
           from: fromLabel,
           to: toLabel,
-          summary: `No live data — ${msg.slice(0, 80)}`,
+          summary: `No live trip data — ${msg.slice(0, 120)}`,
           departureTime: "??:??",
           arrivalTime: "??:??",
           changes: 0,

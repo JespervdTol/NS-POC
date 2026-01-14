@@ -4,6 +4,28 @@ import { RouteOption, TravelDisruption, AlternativesQuery } from "../../core/typ
 
 type ReasonResponse = { text?: string };
 
+function parseHHMM(s: string | undefined | null): number | null {
+  if (!s || typeof s !== "string") return null;
+  const m = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (Number.isNaN(hh) || Number.isNaN(mm)) return null;
+  return hh * 60 + mm;
+}
+
+function clamp01(n: number) {
+  if (!Number.isFinite(n)) return 0.7;
+  return Math.max(0, Math.min(1, n));
+}
+
+function extractJson(s: string) {
+  const start = s.indexOf("{");
+  const end = s.lastIndexOf("}");
+  if (start >= 0 && end > start) return s.slice(start, end + 1);
+  return s;
+}
+
 export class OllamaReasoningProvider implements ReasoningProvider {
   name = "OllamaReasoningProvider";
 
@@ -21,11 +43,13 @@ export class OllamaReasoningProvider implements ReasoningProvider {
     arriveByHHMM?: string | null;
     travelQuery?: AlternativesQuery;
     usedWidenedSearch?: boolean;
+
+    currentTimeHHMM?: string | null;
+    departAfterEffective?: string | null;
   }): Promise<Recommendation | null> {
     const {
       disruption,
       alternatives,
-      busyBlocks,
       now,
       selectedOption,
       bufferMin,
@@ -33,41 +57,71 @@ export class OllamaReasoningProvider implements ReasoningProvider {
       arriveByHHMM,
       travelQuery,
       usedWidenedSearch,
+      currentTimeHHMM,
+      departAfterEffective,
     } = params;
 
-    const nextEvent = busyBlocks
-      .map((b) => b.start)
-      .sort((a, b) => a.getTime() - b.getTime())[0];
-
-    const minutesToNextEvent = nextEvent
-      ? Math.round((nextEvent.getTime() - now.getTime()) / 60000)
-      : null;
-
     const validIds = alternatives.map((a) => a.id);
+
+    const arriveByMin = parseHHMM(arriveByHHMM ?? null);
+    const nowMin = parseHHMM(currentTimeHHMM ?? null);
+    const departAfterMin = parseHHMM(
+      departAfterEffective ?? (typeof travelQuery?.departAfter === "string" ? travelQuery.departAfter : null)
+    );
+
+    const canGuard = arriveByMin !== null && nowMin !== null;
+
+    const isOptDepartOk = (opt: RouteOption) => {
+      const dep = parseHHMM((opt as any).departureTime ?? null);
+      if (dep === null) return true; // if missing, don't hard-block
+      if (dep < nowMin!) return false;
+      if (departAfterMin !== null && dep < departAfterMin) return false;
+      return true;
+    };
+
+    const isOptArriveOnTime = (opt: RouteOption) => {
+      if (arriveByMin === null) return true;
+      const arr = parseHHMM(opt.arrivalTime ?? null);
+      if (arr === null) return true;
+      return arr <= arriveByMin;
+    };
+
+    const eligibleOnTimeIds =
+      canGuard
+        ? alternatives.filter((o) => isOptDepartOk(o) && isOptArriveOnTime(o)).map((o) => o.id)
+        : [];
 
     const basePrompt = `
 You are an NS proactive travel assistant.
 
-You must choose exactly ONE route from the alternatives by returning its id.
+You must choose exactly ONE route id from the alternatives.
 
-Task:
-1) Decide if the selected train still fits (arrives <= arriveBy).
-2) If not, choose the best alternative that DOES arrive before arriveBy.
-   - If multiple fit: pick the one that arrives closest before arriveBy.
-3) If none fit: choose the earliest arriving option and clearly say it will be late.
+HARD RULES (must follow):
+1) Never choose a route that departs before currentTimeHHMM.
+2) Never choose a route that departs before departAfterEffective.
+3) If arriveByHHMM is provided: prefer routes that arrive <= arriveByHHMM.
+4) chosenRouteId MUST exactly match one of the provided ids.
 
-Critical constraint:
-- You MUST output chosenRouteId that EXACTLY matches one of the provided ids.
+Decision logic:
+A) If selectedOption exists and arrives <= arriveByHHMM, keep it.
+B) Otherwise pick the best option that arrives <= arriveByHHMM:
+   - if multiple fit: pick the one that arrives closest BEFORE arriveByHHMM.
+C) If none fit: pick the earliest arriving option and clearly state it will be late.
+
+Important: The user's preferred buffer is inferred from their selection.
+If bufferMin is 30, they prefer arriving 30 minutes early.
 
 Context:
 - Disruption: ${disruption}
-- Minutes until next calendar event: ${minutesToNextEvent ?? "none"}
 - Meeting start (HH:MM): ${meetingStartHHMM ?? "unknown"}
 - Arrive-by (HH:MM): ${arriveByHHMM ?? "unknown"}
-- Buffer minutes: ${bufferMin ?? "unknown"}
+- Inferred bufferMin: ${bufferMin ?? "unknown"}
+- currentTimeHHMM: ${currentTimeHHMM ?? "unknown"}
+- departAfterEffective: ${departAfterEffective ?? (typeof travelQuery?.departAfter === "string" ? travelQuery.departAfter : "unknown")}
 - Used widened search: ${usedWidenedSearch ? "true" : "false"}
-- Selected option: ${selectedOption ? JSON.stringify(selectedOption) : "none"}
-- Travel query: ${travelQuery ? JSON.stringify(travelQuery) : "none"}
+
+Selected option:
+${selectedOption ? JSON.stringify(selectedOption, null, 2) : "none"}
 
 Valid ids:
 ${JSON.stringify(validIds)}
@@ -106,7 +160,7 @@ confidence must be between 0 and 1.
         return null;
       }
 
-      let parsedResp: ReasonResponse | null = null;
+      let parsedResp: ReasonResponse;
       try {
         parsedResp = JSON.parse(rawText) as ReasonResponse;
       } catch {
@@ -129,15 +183,29 @@ confidence must be between 0 and 1.
         };
 
         const chosen = alternatives.find((a) => a.id === parsed.chosenRouteId) ?? null;
-
         if (!chosen) {
-          console.log(
-            `[LLM] ${label} INVALID chosenRouteId:`,
-            parsed.chosenRouteId,
-            "valid:",
-            validIds
-          );
-          return { invalidId: true as const, parsed };
+          console.log(`[LLM] ${label} INVALID chosenRouteId`, parsed.chosenRouteId);
+          return { kind: "invalidId" as const };
+        }
+
+        // Guardrail: reject impossible/late choices if we can check them
+        if (canGuard) {
+          const violatesDepart = !isOptDepartOk(chosen);
+          const violatesArrive = !isOptArriveOnTime(chosen);
+          if (violatesDepart || violatesArrive) {
+            console.log(
+              `[LLM] ${label} VIOLATION`,
+              JSON.stringify({
+                chosen: chosen.id,
+                violatesDepart,
+                violatesArrive,
+                currentTimeHHMM,
+                departAfterEffective,
+                arriveByHHMM,
+              })
+            );
+            return { kind: "violatesRules" as const };
+          }
         }
 
         const rec: Recommendation = {
@@ -154,11 +222,13 @@ confidence must be between 0 and 1.
             selectedStillFits:
               typeof parsed.selectedStillFits === "boolean" ? parsed.selectedStillFits : undefined,
             usedWidenedSearch: !!usedWidenedSearch,
-            departAfter: travelQuery?.departAfter,
+            departAfter: typeof travelQuery?.departAfter === "string" ? travelQuery.departAfter : undefined,
+            currentTimeHHMM: currentTimeHHMM ?? undefined,
+            departAfterEffective: departAfterEffective ?? undefined,
           },
         };
 
-        return { invalidId: false as const, rec };
+        return { kind: "ok" as const, rec };
       } catch (e) {
         console.log(`[LLM] ${label} JSON parse failed`, String(e));
         return null;
@@ -166,16 +236,20 @@ confidence must be between 0 and 1.
     };
 
     const res1 = await attempt(basePrompt, "attempt1");
-    if (res1 && "invalidId" in res1 && res1.invalidId === false) {
-      return res1.rec;
-    }
+    if (res1?.kind === "ok") return res1.rec;
 
-    if (res1 && "invalidId" in res1 && res1.invalidId === true) {
+    if (res1?.kind === "invalidId" || res1?.kind === "violatesRules") {
+      const constraint =
+        canGuard && eligibleOnTimeIds.length > 0
+          ? `You MUST choose an id from this ON-TIME eligible list (arrives <= arriveBy AND departs after current/departAfter):\n${JSON.stringify(
+              eligibleOnTimeIds
+            )}`
+          : `You MUST choose an id from the valid list:\n${JSON.stringify(validIds)}`;
+
       const retryPrompt = `
-Your previous answer used an invalid chosenRouteId.
+Your previous answer was not acceptable (${res1.kind}).
 
-You MUST choose ONE id from this list EXACTLY:
-${JSON.stringify(validIds)}
+${constraint}
 
 Return ONLY valid JSON in the same schema:
 {
@@ -186,29 +260,15 @@ Return ONLY valid JSON in the same schema:
   "selectedStillFits": boolean
 }
 
-Re-evaluate using these alternatives:
+Alternatives (JSON):
 ${JSON.stringify(alternatives, null, 2)}
 `.trim();
 
       const res2 = await attempt(retryPrompt, "attempt2");
-      if (res2 && "invalidId" in res2 && res2.invalidId === false) {
-        return res2.rec;
-      }
+      if (res2?.kind === "ok") return res2.rec;
     }
 
     console.log("[LLM] strict-mode: returning null (no recommendation)");
     return null;
   }
-}
-
-function clamp01(n: number) {
-  if (!Number.isFinite(n)) return 0.7;
-  return Math.max(0, Math.min(1, n));
-}
-
-function extractJson(s: string) {
-  const start = s.indexOf("{");
-  const end = s.lastIndexOf("}");
-  if (start >= 0 && end > start) return s.slice(start, end + 1);
-  return s;
 }

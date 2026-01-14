@@ -1,3 +1,4 @@
+// src/core/services/MonitoringService.ts
 import { CalendarProvider } from "../types/calendar";
 import { AlternativesQuery, TravelDataProvider, RouteOption } from "../types/travel";
 import { ReasoningProvider } from "../types/reasoning";
@@ -23,7 +24,7 @@ function minutesSinceMidnight(d: Date): number {
 }
 
 function formatHHMMFromMinutes(mins: number): string {
-  const h = Math.floor(mins / 60);
+  const h = Math.floor(mins / 60) % 24;
   const m = mins % 60;
   const hh = String(h).padStart(2, "0");
   const mm = String(m).padStart(2, "0");
@@ -34,10 +35,21 @@ function formatHHMMFromDate(d: Date): string {
   return formatHHMMFromMinutes(minutesSinceMidnight(d));
 }
 
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
 export class MonitoringService {
   private lastScheduleKey: string | null = null;
 
   private selectedOption: RouteOption | null = null;
+
+  /**
+   * Inferred from user's selection:
+   * bufferMin = meetingStart - selectedArrival
+   *
+   * Important: This can be > 10 (e.g. user likes arriving 30 min early).
+   */
   private selectedBufferMin: number | null = null;
 
   private travelQuery: AlternativesQuery = {
@@ -61,6 +73,13 @@ export class MonitoringService {
     console.log("[MONITOR] setTravelQuery:", this.travelQuery);
   }
 
+  /**
+   * Called by UI when user selects a train.
+   * We infer their "preferred buffer" based on:
+   * buffer = meetingStart - selectedArrival
+   *
+   * If meeting is 18:00 and arrival 17:30 => buffer = 30.
+   */
   async selectOption(option: RouteOption) {
     this.selectedOption = option;
 
@@ -76,6 +95,7 @@ export class MonitoringService {
 
     const arrMins = parseHHMM(option.arrivalTime);
 
+    // If we can't infer, choose a sensible demo default.
     if (!nextEvent || arrMins === null) {
       this.selectedBufferMin = 10;
       console.log("[MONITOR] selectOption: could not infer buffer -> using 10");
@@ -84,9 +104,29 @@ export class MonitoringService {
 
     const eventStartMins = minutesSinceMidnight(nextEvent.start);
     const inferred = eventStartMins - arrMins;
-    this.selectedBufferMin = Math.max(5, Math.min(30, inferred));
 
-    console.log("[MONITOR] selectOption inferred buffer:", this.selectedBufferMin);
+    // If user somehow selected a train that arrives after the meeting start,
+    // don't store negative buffer; fall back to default.
+    if (!Number.isFinite(inferred) || inferred <= 0) {
+      this.selectedBufferMin = 10;
+      console.log("[MONITOR] selectOption: inferred<=0 -> using 10");
+      return;
+    }
+
+    /**
+     * Demo tuning:
+     * - allow buffers like 30, 45, 60 (user preference)
+     * - but cap extreme values so the demo doesn’t look weird.
+     * Pick 5..90 as a robust range.
+     */
+    this.selectedBufferMin = clamp(Math.round(inferred), 5, 90);
+
+    console.log("[MONITOR] selectOption inferred buffer:", {
+      inferred,
+      stored: this.selectedBufferMin,
+      meetingStart: formatHHMMFromDate(nextEvent.start),
+      selectedArrival: option.arrivalTime,
+    });
   }
 
   clearSelection() {
@@ -117,9 +157,15 @@ export class MonitoringService {
     };
   }
 
+  /**
+   * ✅ FIX: Widen search ONLY up to "now" (never include already-departed trains)
+   * We still widen "earlier than user's departAfter", but never earlier than current time.
+   *
+   * If you want 1–2 minutes grace, change minsNow to (minsNow - 2).
+   */
   private computeWidenedDepartAfter(now: Date): string {
     const minsNow = minutesSinceMidnight(now);
-    const widened = Math.max(0, minsNow - 90);
+    const widened = Math.max(0, minsNow);
     return formatHHMMFromMinutes(widened);
   }
 
@@ -146,20 +192,26 @@ export class MonitoringService {
       return;
     }
 
+    // ✅ Use inferred user-preference buffer if available
     const bufferMin = this.selectedBufferMin ?? 10;
-    const meetingStartHHMM = formatHHMMFromDate(nextMeeting.start);
-    const arriveByHHMM = formatHHMMFromMinutes(
-      this.computeArriveByMins(minutesSinceMidnight(nextMeeting.start), bufferMin)
-    );
+
+    const meetingStartMins = minutesSinceMidnight(nextMeeting.start);
+    const arriveByMins = this.computeArriveByMins(meetingStartMins, bufferMin);
+
+    const meetingStartHHMM = formatHHMMFromMinutes(meetingStartMins);
+    const arriveByHHMM = formatHHMMFromMinutes(arriveByMins);
 
     console.log("[MONITOR] timing", { meetingStartHHMM, arriveByHHMM, bufferMin });
 
+    // Load alternatives with normal query, but widen if needed
     let usedWidenedSearch = false;
     let alternatives = await this.deps.travel.getAlternatives(this.travelQuery);
 
     const widenedDepartAfter = this.computeWidenedDepartAfter(now);
 
-    const userAfter = this.travelQuery.departAfter ? parseHHMM(this.travelQuery.departAfter) : null;
+    const userAfter =
+      typeof this.travelQuery.departAfter === "string" ? parseHHMM(this.travelQuery.departAfter) : null;
+
     const widenAfter = parseHHMM(widenedDepartAfter);
 
     if (widenAfter !== null && (userAfter === null || userAfter > widenAfter)) {
@@ -171,10 +223,17 @@ export class MonitoringService {
       }
     }
 
+    const departAfterEffective =
+      usedWidenedSearch
+        ? widenedDepartAfter
+        : typeof this.travelQuery.departAfter === "string"
+          ? this.travelQuery.departAfter
+          : null;
+
     console.log("[MONITOR] alternatives", {
       count: alternatives.length,
       usedWidenedSearch,
-      departAfterUsed: usedWidenedSearch ? widenedDepartAfter : this.travelQuery.departAfter,
+      departAfterUsed: departAfterEffective,
     });
 
     if (alternatives.length === 0) {
@@ -182,21 +241,27 @@ export class MonitoringService {
       return;
     }
 
+    // ✅ LLM decides; Monitoring provides context + guardrail inputs
     const rec = await this.deps.reasoning.recommend({
       busyBlocks,
       disruption: "none",
       alternatives,
       now,
+
       selectedOption: this.selectedOption,
       bufferMin,
       meetingStartHHMM,
       arriveByHHMM,
       travelQuery: {
         ...this.travelQuery,
-        departAfter: usedWidenedSearch ? widenedDepartAfter : this.travelQuery.departAfter,
+        departAfter: departAfterEffective ?? undefined,
       },
       usedWidenedSearch,
-    });
+
+      // extra context for your violation logging / guardrails
+      currentTimeHHMM: formatHHMMFromDate(now),
+      departAfterEffective: departAfterEffective,
+    } as any);
 
     if (!rec) {
       console.log("[MONITOR] strict-mode: rec=null -> no notification");

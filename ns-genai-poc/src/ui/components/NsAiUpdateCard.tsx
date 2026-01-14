@@ -43,7 +43,6 @@ export function NsAiUpdateCard({ alert }: { alert: TravelAlert }) {
         <Text style={styles.line}>
           Departs {rec.chosen.departureTime ?? "??:??"} • Arrives {rec.chosen.arrivalTime}
         </Text>
-        <Text style={styles.confidence}>{Math.round(rec.confidence * 100)}% certainty</Text>
       </View>
 
       <Text style={styles.reason}>{rec.reason}</Text>

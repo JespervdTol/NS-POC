@@ -7,21 +7,25 @@ export type Recommendation = {
   confidence: number;
 
   meta?: {
-    meetingStart?: string;        // "HH:MM"
-    arriveBy?: string;            // "HH:MM"
-    bufferMin?: number;
+    meetingStart?: string; // "HH:MM"
+    arriveBy?: string;     // "HH:MM"
+    bufferMin?: number;    // inferred user preference (e.g. 30)
     selectedOptionId?: string | null;
+
     selectedStillFits?: boolean;
     willArriveOnTime?: boolean;
+
     usedWidenedSearch?: boolean;
     departAfter?: string;
+
+    currentTimeHHMM?: string;
+    departAfterEffective?: string | null;
   };
 };
 
 export interface ReasoningProvider {
   name: string;
 
-  // ✅ may return null if LLM fails or refuses
   recommend(params: {
     busyBlocks: BusyBlock[];
     disruption: TravelDisruption;
@@ -34,5 +38,8 @@ export interface ReasoningProvider {
     arriveByHHMM?: string | null;
     travelQuery?: AlternativesQuery;
     usedWidenedSearch?: boolean;
+
+    currentTimeHHMM?: string | null;
+    departAfterEffective?: string | null;
   }): Promise<Recommendation | null>;
 }
