@@ -74,11 +74,28 @@ app.post("/reason", async (req, res) => {
         model: process.env.OLLAMA_MODEL || "llama3.1",
         prompt,
         stream: false,
+
+        format: "json",
+
+        options: { temperature: 0.2 },
       }),
     });
 
+    if (!ollamaResponse.ok) {
+      const t = await ollamaResponse.text();
+      return res.status(500).json({
+        error: `Ollama HTTP ${ollamaResponse.status}: ${t.slice(0, 200)}`,
+      });
+    }
+
     const data = await ollamaResponse.json();
-    res.json({ text: data.response ?? "" });
+    const text = String(data?.response ?? "").trim();
+
+    if (!text) {
+      return res.status(500).json({ error: "Ollama returned empty response" });
+    }
+
+    res.json({ text });
   } catch (err) {
     res.status(500).json({ error: "LLM reasoning failed" });
   }

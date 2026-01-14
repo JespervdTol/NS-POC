@@ -6,32 +6,33 @@ export type Recommendation = {
   reason: string;
   confidence: number;
 
-  // Optional extras the UI can show later (trust / transparency)
   meta?: {
-    arriveBy?: string; // "HH:MM"
+    meetingStart?: string;        // "HH:MM"
+    arriveBy?: string;            // "HH:MM"
     bufferMin?: number;
-    meetingStart?: string; // "HH:MM"
-    willArriveOnTime?: boolean;
     selectedOptionId?: string | null;
     selectedStillFits?: boolean;
+    willArriveOnTime?: boolean;
     usedWidenedSearch?: boolean;
-    departAfter?: string | undefined;
+    departAfter?: string;
   };
 };
 
 export interface ReasoningProvider {
   name: string;
+
+  // ✅ may return null if LLM fails or refuses
   recommend(params: {
     busyBlocks: BusyBlock[];
     disruption: TravelDisruption;
     alternatives: RouteOption[];
     now: Date;
 
-    // NEW (optional) context so the LLM can really decide
     selectedOption?: RouteOption | null;
     bufferMin?: number | null;
-    arriveByHHMM?: string | null;
     meetingStartHHMM?: string | null;
+    arriveByHHMM?: string | null;
     travelQuery?: AlternativesQuery;
-  }): Promise<Recommendation>;
+    usedWidenedSearch?: boolean;
+  }): Promise<Recommendation | null>;
 }
