@@ -112,7 +112,6 @@ export function AppShell() {
 
       <ScrollView contentContainerStyle={styles.scrollPad}>
 
-        {/* ✅ NS-styled POC selector */}
         <View style={styles.selectorWrap}>
           <View style={styles.selectorHeaderRow}>
             <View>

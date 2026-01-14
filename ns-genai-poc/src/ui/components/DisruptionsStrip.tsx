@@ -13,6 +13,7 @@ export function DisruptionsStrip() {
 const styles = StyleSheet.create({
   strip: {
     backgroundColor: NS.yellow,
+    marginTop: 10,
     paddingVertical: 10,
     paddingHorizontal: 16,
   },
