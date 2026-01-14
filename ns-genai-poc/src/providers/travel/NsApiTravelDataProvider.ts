@@ -1,4 +1,3 @@
-// src/providers/travel/NsApiTravelDataProvider.ts
 import { AlternativesQuery, RouteOption, TravelDataProvider, TravelDisruption } from "../../core/types/travel";
 import { NsReisinfoClient } from "./NsReisinfoClient";
 
@@ -85,7 +84,6 @@ function extractTripTimes(trip: any): { depIso: string; arrIso: string; changes:
   return { depIso, arrIso, changes };
 }
 
-// ✅ type guard to remove nulls cleanly
 function notNull<T>(x: T | null): x is T {
   return x !== null;
 }
@@ -116,7 +114,6 @@ export class NsApiTravelDataProvider implements TravelDataProvider {
     const now = new Date();
     let thresholdMin = minutesFromDate(now);
 
-    // ✅ departAfter is HH:MM only
     const departAfter = typeof query?.departAfter === "string" ? query.departAfter : null;
 
     if (departAfter && /^\d{1,2}:\d{2}$/.test(departAfter)) {
@@ -124,7 +121,6 @@ export class NsApiTravelDataProvider implements TravelDataProvider {
       if (p !== null) thresholdMin = p;
     }
 
-    // ✅ FIX: hard clamp so we never include trains that already departed (even if widen-search goes weird)
     thresholdMin = Math.max(thresholdMin, minutesFromDate(now));
 
     const fallbackHHMM = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
@@ -158,7 +154,6 @@ export class NsApiTravelDataProvider implements TravelDataProvider {
 
           const depMin = parseHHMM(depHHMM);
 
-          // ✅ FIX: filter based on thresholdMin (already clamped to now)
           if (depMin !== null && depMin < thresholdMin) return null;
 
           const id = safeStr(t?.uid) || safeStr(t?.id) || `trip-${idx}`;

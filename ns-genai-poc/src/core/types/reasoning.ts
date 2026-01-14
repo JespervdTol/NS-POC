@@ -7,9 +7,9 @@ export type Recommendation = {
   confidence: number;
 
   meta?: {
-    meetingStart?: string; // "HH:MM"
-    arriveBy?: string;     // "HH:MM"
-    bufferMin?: number;    // inferred user preference (e.g. 30)
+    meetingStart?: string;
+    arriveBy?: string;
+    bufferMin?: number;
     selectedOptionId?: string | null;
 
     selectedStillFits?: boolean;

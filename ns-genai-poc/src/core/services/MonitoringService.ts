@@ -1,4 +1,3 @@
-// src/core/services/MonitoringService.ts
 import { CalendarProvider } from "../types/calendar";
 import { AlternativesQuery, TravelDataProvider, RouteOption } from "../types/travel";
 import { ReasoningProvider } from "../types/reasoning";
@@ -44,12 +43,6 @@ export class MonitoringService {
 
   private selectedOption: RouteOption | null = null;
 
-  /**
-   * Inferred from user's selection:
-   * bufferMin = meetingStart - selectedArrival
-   *
-   * Important: This can be > 10 (e.g. user likes arriving 30 min early).
-   */
   private selectedBufferMin: number | null = null;
 
   private travelQuery: AlternativesQuery = {
@@ -73,13 +66,6 @@ export class MonitoringService {
     console.log("[MONITOR] setTravelQuery:", this.travelQuery);
   }
 
-  /**
-   * Called by UI when user selects a train.
-   * We infer their "preferred buffer" based on:
-   * buffer = meetingStart - selectedArrival
-   *
-   * If meeting is 18:00 and arrival 17:30 => buffer = 30.
-   */
   async selectOption(option: RouteOption) {
     this.selectedOption = option;
 
@@ -95,7 +81,6 @@ export class MonitoringService {
 
     const arrMins = parseHHMM(option.arrivalTime);
 
-    // If we can't infer, choose a sensible demo default.
     if (!nextEvent || arrMins === null) {
       this.selectedBufferMin = 10;
       console.log("[MONITOR] selectOption: could not infer buffer -> using 10");
@@ -105,20 +90,12 @@ export class MonitoringService {
     const eventStartMins = minutesSinceMidnight(nextEvent.start);
     const inferred = eventStartMins - arrMins;
 
-    // If user somehow selected a train that arrives after the meeting start,
-    // don't store negative buffer; fall back to default.
     if (!Number.isFinite(inferred) || inferred <= 0) {
       this.selectedBufferMin = 10;
       console.log("[MONITOR] selectOption: inferred<=0 -> using 10");
       return;
     }
 
-    /**
-     * Demo tuning:
-     * - allow buffers like 30, 45, 60 (user preference)
-     * - but cap extreme values so the demo doesn’t look weird.
-     * Pick 5..90 as a robust range.
-     */
     this.selectedBufferMin = clamp(Math.round(inferred), 5, 90);
 
     console.log("[MONITOR] selectOption inferred buffer:", {
@@ -158,12 +135,6 @@ export class MonitoringService {
     };
   }
 
-  /**
-   * ✅ FIX: Widen search ONLY up to "now" (never include already-departed trains)
-   * We still widen "earlier than user's departAfter", but never earlier than current time.
-   *
-   * If you want 1–2 minutes grace, change minsNow to (minsNow - 2).
-   */
   private computeWidenedDepartAfter(now: Date): string {
     const minsNow = minutesSinceMidnight(now);
     const widened = Math.max(0, minsNow);
@@ -193,7 +164,6 @@ export class MonitoringService {
       return;
     }
 
-    // ✅ Use inferred user-preference buffer if available
     const bufferMin = this.selectedBufferMin ?? 10;
 
     const meetingStartMins = minutesSinceMidnight(nextMeeting.start);
@@ -204,7 +174,6 @@ export class MonitoringService {
 
     console.log("[MONITOR] timing", { meetingStartHHMM, arriveByHHMM, bufferMin });
 
-    // Load alternatives with normal query, but widen if needed
     let usedWidenedSearch = false;
     let alternatives = await this.deps.travel.getAlternatives(this.travelQuery);
 
@@ -242,7 +211,6 @@ export class MonitoringService {
       return;
     }
 
-    // ✅ LLM decides; Monitoring provides context + guardrail inputs
     const rec = await this.deps.reasoning.recommend({
       busyBlocks,
       disruption: "none",
@@ -259,7 +227,6 @@ export class MonitoringService {
       },
       usedWidenedSearch,
 
-      // extra context for your violation logging / guardrails
       currentTimeHHMM: formatHHMMFromDate(now),
       departAfterEffective: departAfterEffective,
     } as any);

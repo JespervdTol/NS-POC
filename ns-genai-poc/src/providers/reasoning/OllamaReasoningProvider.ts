@@ -32,7 +32,6 @@ function safeStr(x: any) {
 
 function containsHardCertainty(s: string) {
   const t = s.toLowerCase();
-  // Disallow strong certainty
   const hard = [" will ", " definitely", " guarantee", " certainly", "100%", " for sure"];
   return hard.some((w) => t.includes(w));
 }
@@ -47,7 +46,6 @@ function looksTooGenericReason(s: string) {
   const t = s.trim().toLowerCase();
   if (!t) return true;
 
-  // Reject common regressions like “earliest arriving option”
   const banned = [
     "earliest arriving option",
     "earliest option",
@@ -58,10 +56,8 @@ function looksTooGenericReason(s: string) {
   ];
   if (banned.some((b) => t === b || t.includes(b))) return true;
 
-  // Too short => not demo-quality
   if (t.length < 90) return true;
 
-  // Bullet-ish patterns (we want a short paragraph)
   if (t.includes("\n-") || t.includes("\n•") || t.includes("•")) return true;
 
   return false;
@@ -239,7 +235,6 @@ confidence must be between 0 and 1.
           return { kind: "invalidId" as const };
         }
 
-        // Guardrail: reject choices that violate time constraints if we can check them
         if (canGuard) {
           const violatesDepart = !isOptDepartOk(chosen);
           const violatesArrive = !isOptArriveOnTime(chosen);
@@ -261,7 +256,6 @@ confidence must be between 0 and 1.
 
         const reason = safeStr(parsed.reason).replace(/\s+/g, " ").trim();
 
-        // Enforce the tone/quality we want for the demo
         if (
           looksTooGenericReason(reason) ||
           containsHardCertainty(reason) ||

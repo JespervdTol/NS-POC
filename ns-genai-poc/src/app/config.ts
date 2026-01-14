@@ -8,7 +8,7 @@ export type NotificationProviderKind = "inapp" | "expoPush";
 /**
  * DEMO / DEV CONFIG
  *
- * 👉 When demoing:
+ * When demoing:
  * 1. Start backend (port 3001)
  * 2. Start ngrok: `ngrok http 3001`
  * 3. Copy the HTTPS forwarding URL from ngrok
